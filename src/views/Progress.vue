@@ -203,7 +203,7 @@
               </div>
             </div>
             <div class="assignment-actions">
-              <el-button v-if="!item.submitted" type="primary" size="small">
+              <el-button v-if="!item.submitted" type="primary" size="small" @click="handleOpenSubmitDialog(item)">
                 <el-icon><Upload /></el-icon>
                 提交作业
               </el-button>
@@ -251,13 +251,75 @@
         <el-empty v-else description="暂无即将到来的考试" />
       </div>
     </el-card>
+
+    <!-- 作业提交对话框 -->
+    <el-dialog
+      v-model="showSubmitDialog"
+      title="提交作业"
+      width="600px"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+    >
+      <div v-if="currentAssignment" class="submit-dialog-content">
+        <div class="assignment-info-summary">
+          <h4>{{ currentAssignment.title }}</h4>
+          <p class="course-info">{{ currentAssignment.courseName }} · {{ currentAssignment.enterprise }}</p>
+        </div>
+
+        <el-form :model="submitForm" label-width="80px">
+          <el-form-item label="作业内容">
+            <el-input
+              v-model="submitForm.content"
+              type="textarea"
+              :rows="6"
+              placeholder="请输入作业内容或说明..."
+              maxlength="1000"
+              show-word-limit
+            />
+          </el-form-item>
+
+          <el-form-item label="附件">
+            <el-upload
+              v-model:file-list="fileList"
+              :auto-upload="false"
+              :on-change="handleFileUpload"
+              :on-remove="removeFile"
+              :before-upload="beforeUpload"
+              multiple
+              action=""
+              :limit="5"
+              accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.zip,.rar"
+            >
+              <el-button type="primary">
+                <el-icon><Upload /></el-icon>
+                选择文件
+              </el-button>
+              <template #tip>
+                <div class="el-upload__tip">
+                  支持格式：pdf、doc、docx、txt、jpg、png、zip、rar，单个文件不超过10MB，最多5个文件
+                </div>
+              </template>
+            </el-upload>
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="showSubmitDialog = false">取消</el-button>
+          <el-button type="primary" :loading="submitLoading" @click="handleSubmitAssignment">
+            提交作业
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search,
   Plus,
@@ -275,6 +337,7 @@ import {
   View
 } from '@element-plus/icons-vue'
 import { themeColors } from '@/styles/variables.js'
+import { userApi } from '@/api'
 
 const router = useRouter()
 
@@ -285,6 +348,16 @@ const filterForm = ref({
 })
 
 const assignmentTab = ref('homework')
+
+// 作业提交相关
+const showSubmitDialog = ref(false)
+const currentAssignment = ref(null)
+const submitForm = ref({
+  content: '',
+  attachments: []
+})
+const submitLoading = ref(false)
+const fileList = ref([])
 
 const statistics = ref([
   {
@@ -431,6 +504,178 @@ const handleContinue = (courseId) => {
 
 const handleViewDetail = (courseId) => {
   ElMessage.info(`查看课程详情 ${courseId}`)
+}
+
+// 作业提交相关函数
+const handleOpenSubmitDialog = (assignment) => {
+  currentAssignment.value = assignment
+  submitForm.value = {
+    content: '',
+    attachments: []
+  }
+  fileList.value = []
+  showSubmitDialog.value = true
+}
+
+const handleSubmitAssignment = async () => {
+  if (!currentAssignment.value) return
+  
+  if (!submitForm.value.content.trim()) {
+    ElMessage.warning('请输入作业内容')
+    return
+  }
+  
+  // 确认提交
+  try {
+    await ElMessageBox.confirm(
+      `确定要提交作业"${currentAssignment.value.title}"吗？提交后将无法修改。`,
+      '确认提交',
+      {
+        confirmButtonText: '确定提交',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+  } catch {
+    // 用户取消提交
+    return
+  }
+  
+  try {
+    submitLoading.value = true
+    console.log('📤 提交作业，作业ID:', currentAssignment.value.id)
+    console.log('请求URL:', `http://192.168.1.132:8082/api/progress/assignments/${currentAssignment.value.id}/submit`)
+    console.log('提交数据:', submitForm.value)
+    
+    const submitData = {
+      content: submitForm.value.content,
+      attachments: submitForm.value.attachments.map(file => ({
+        name: file.name,
+        url: file.url || URL.createObjectURL(file),
+        size: file.size
+      }))
+    }
+    
+    const response = await userApi.submitAssignment(currentAssignment.value.id, submitData)
+    console.log('📝 提交作业响应:', response)
+    
+    // 检查响应格式
+    if (response && typeof response === 'object' && 'code' in response) {
+      console.log('🏷️ 提交作业标准格式响应，code:', response.code, 'message:', response.message)
+      
+      const successCodes = [200, 0, 201, 204]
+      if (successCodes.includes(response.code)) {
+        console.log('✅ 提交作业成功，响应码:', response.code)
+        ElMessage.success('作业提交成功！')
+        
+        // 更新作业状态为已提交
+        if (currentAssignment.value) {
+          currentAssignment.value.submitted = true
+          // 同时更新homeworkList中的作业状态
+          const homeworkItem = homeworkList.value.find(item => item.id === currentAssignment.value.id)
+          if (homeworkItem) {
+            homeworkItem.submitted = true
+          }
+        }
+        
+        // 关闭对话框
+        showSubmitDialog.value = false
+        
+        // 清空表单数据
+        submitForm.value = {
+          content: '',
+          attachments: []
+        }
+        fileList.value = []
+      } else {
+        console.log('❌ 提交作业失败，错误码:', response.code, '错误信息:', response.message)
+        const errorMsg = response.message && response.message.trim() !== '' ? response.message : '提交失败，请稍后重试'
+        ElMessage.error(errorMsg)
+      }
+    } else {
+      // 非标准格式，认为成功
+      console.log('📄 提交作业非标准格式响应，认为成功')
+      ElMessage.success('作业提交成功！')
+      
+      if (currentAssignment.value) {
+        currentAssignment.value.submitted = true
+        // 同时更新homeworkList中的作业状态
+        const homeworkItem = homeworkList.value.find(item => item.id === currentAssignment.value.id)
+        if (homeworkItem) {
+          homeworkItem.submitted = true
+        }
+      }
+      showSubmitDialog.value = false
+      
+      // 清空表单数据
+      submitForm.value = {
+        content: '',
+        attachments: []
+      }
+      fileList.value = []
+    }
+  } catch (error) {
+    console.error('提交作业失败:', error)
+    console.error('错误详情:', error.response?.data)
+    
+    let errorMessage = '提交失败，请稍后重试'
+    if (error.response?.status === 400) {
+      errorMessage = '作业内容不能为空或格式不正确'
+    } else if (error.response?.status === 403) {
+      errorMessage = '作业已截止，无法提交'
+    } else if (error.response?.status === 404) {
+      errorMessage = '作业不存在'
+    } else if (error.response?.status === 500) {
+      errorMessage = '服务器内部错误，请稍后重试'
+    } else if (error.response?.data?.message) {
+      errorMessage = error.response.data.message
+    }
+    
+    ElMessage.error(errorMessage)
+  } finally {
+    submitLoading.value = false
+  }
+}
+
+const beforeUpload = (file) => {
+  // 检查文件大小
+  const maxSize = 10 * 1024 * 1024 // 10MB
+  if (file.size > maxSize) {
+    ElMessage.error(`文件 "${file.name}" 超过10MB限制`)
+    return false
+  }
+  
+  // 检查文件类型
+  const allowedTypes = [
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain',
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'application/zip',
+    'application/x-rar-compressed'
+  ]
+  
+  if (!allowedTypes.includes(file.type) && !file.name.match(/\.(pdf|doc|docx|txt|jpg|jpeg|png|zip|rar)$/i)) {
+    ElMessage.error(`文件 "${file.name}" 格式不支持`)
+    return false
+  }
+  
+  return true // 阻止自动上传
+}
+
+const handleFileUpload = (uploadFile) => {
+  // 因为设置了auto-upload=false，这里直接更新文件列表
+  fileList.value = uploadFile
+  submitForm.value.attachments = uploadFile
+}
+
+const removeFile = (file, fileList) => {
+  // 同步更新两个数组
+  submitForm.value.attachments = fileList
+  console.log('移除文件:', file.name)
 }
 
 const getStatusType = (status) => {
@@ -945,5 +1190,32 @@ const handleTabChange = (tab) => {
       }
     }
   }
+}
+
+// 作业提交对话框样式
+:deep(.submit-dialog-content) {
+  .assignment-info-summary {
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 20px;
+
+    h4 {
+      margin: 0 0 8px 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: $text-primary;
+    }
+
+    .course-info {
+      margin: 0;
+      font-size: 14px;
+      color: $text-regular;
+    }
+  }
+}
+
+:deep(.dialog-footer) {
+  text-align: right;
 }
 </style>

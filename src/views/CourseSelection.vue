@@ -101,7 +101,12 @@
           >
             {{ course.name }}
           </el-tag>
-          <el-button type="primary" size="small" @click="handleConfirmSelection">
+          <el-button 
+            type="primary" 
+            size="small" 
+            @click="handleConfirmSelection"
+            :loading="confirmSelectionLoading"
+          >
             确认选课
           </el-button>
         </div>
@@ -186,13 +191,20 @@
 
           <div class="course-footer">
             <el-button
-              v-if="!course.isSelected"
+              v-if="!course.isSelected && !course.alreadySelected"
               type="primary"
               :disabled="course.enrolled >= course.capacity"
               @click="handleSelectCourse(course)"
             >
               <el-icon><Plus /></el-icon>
               {{ course.enrolled >= course.capacity ? '已满员' : '选择课程' }}
+            </el-button>
+            <el-button
+              v-else-if="course.alreadySelected"
+              disabled
+            >
+              <el-icon><Check /></el-icon>
+              已选修
             </el-button>
             <el-button
               v-else
@@ -350,9 +362,11 @@ import {
   Calendar,
   Clock,
   Collection,
-  Star
+  Star,
+  Check
 } from '@element-plus/icons-vue'
 import { themeColors, courseCardColors } from '@/styles/variables.js'
+import { courseApi } from '@/api'
 
 const filterForm = ref({
   category: '',
@@ -368,6 +382,7 @@ const detailDialogVisible = ref(false)
 const selectedCourseDetail = ref(null)
 const detailTab = ref('info')
 const recommendedCourses = ref([])
+const confirmSelectionLoading = ref(false)
 
 // 随机背景图片数组（使用 Picsum Photos 随机图片服务）
 const backgroundImages = [
@@ -593,13 +608,29 @@ const handleReset = () => {
 }
 
 const handleSelectCourse = (course) => {
+  // 检查是否已选择
   if (selectedCourses.value.find(c => c.id === course.id)) {
     ElMessage.warning('该课程已选择')
     return
   }
 
+  // 检查是否已满员
+  if (course.enrolled >= course.capacity) {
+    ElMessage.error('该课程已满员，无法选择')
+    return
+  }
+
+  // 检查是否已选修（在实际场景中，应该检查用户是否已经选过这门课）
+  if (course.alreadySelected) {
+    ElMessage.warning('您已经选修过这门课程')
+    return
+  }
+
+  // 更新状态
   course.isSelected = true
   selectedCourses.value.push(course)
+  
+  console.log('📚 选择课程:', course.name, 'ID:', course.id)
   ElMessage.success(`已选择课程：${course.name}`)
 }
 
@@ -609,6 +640,7 @@ const handleUnselectCourse = (courseId) => {
     course.isSelected = false
   }
   selectedCourses.value = selectedCourses.value.filter(c => c.id !== courseId)
+  console.log('🚫 取消选择课程，ID:', courseId)
   ElMessage.info('已取消选择')
 }
 
@@ -617,6 +649,11 @@ const handleRemoveSelected = (courseId) => {
 }
 
 const handleConfirmSelection = async () => {
+  if (selectedCourses.value.length === 0) {
+    ElMessage.warning('请先选择课程')
+    return
+  }
+
   try {
     await ElMessageBox.confirm(
       `确认选择这 ${selectedCourses.value.length} 门课程吗？`,
@@ -628,15 +665,134 @@ const handleConfirmSelection = async () => {
       }
     )
 
-    ElMessage.success('选课成功！')
-    selectedCourses.value = []
-    allCourses.value.forEach(c => {
-      if (c.isSelected) {
-        c.isSelected = false
+    // 调用API确认选课
+    confirmSelectionLoading.value = true
+    
+    // 保存当前选择状态，以防失败时需要恢复
+    const originalSelection = [...selectedCourses.value]
+    const courseIds = selectedCourses.value.map(course => course.id)
+    
+    console.log('📚 确认选课，课程IDs:', courseIds)
+    console.log('请求URL:', 'http://192.168.1.132:8082/api/courses/confirm-selection')
+    console.log('提交数据:', { courseIds })
+    
+    const response = await courseApi.confirmSelection(courseIds)
+    console.log('📝 选课确认响应:', response)
+    
+    // 检查响应格式
+    if (response && typeof response === 'object' && 'code' in response) {
+      console.log('🏷️ 选课标准格式响应，code:', response.code, 'message:', response.message)
+      
+      const successCodes = [200, 0, 201, 204]
+      if (successCodes.includes(response.code)) {
+        console.log('✅ 选课成功，响应码:', response.code)
+        
+        // 检查是否有部分失败的情况
+        if (response.data && response.data.failedCourses && response.data.successfulCourses) {
+          const successful = response.data.successfulCourses
+          const failed = response.data.failedCourses
+          
+          if (failed.length > 0) {
+            ElMessage.warning(`成功选择 ${successful.length} 门课程，${failed.length} 门课程选择失败`)
+            console.log('⚠️ 部分课程选课失败:', failed)
+          } else {
+            ElMessage.success(`成功选择 ${successful.length} 门课程！`)
+          }
+          
+          // 更新成功的课程状态
+          successful.forEach(courseId => {
+            const course = allCourses.value.find(c => c.id === courseId)
+            if (course) {
+              course.isSelected = false
+              course.enrolled = Math.min(course.enrolled + 1, course.capacity)
+            }
+          })
+          
+          // 移除成功的课程，保留失败的让用户可以重试
+          selectedCourses.value = selectedCourses.value.filter(sc => 
+            failed.find(fc => fc.courseId === sc.id)
+          )
+          
+        } else {
+          // 全部成功的情况
+          ElMessage.success(`成功选择 ${selectedCourses.value.length} 门课程！`)
+          
+          // 更新选课状态
+          selectedCourses.value.forEach(selectedCourse => {
+            const course = allCourses.value.find(c => c.id === selectedCourse.id)
+            if (course) {
+              course.isSelected = false // 重置选择状态
+              course.enrolled = Math.min(course.enrolled + 1, course.capacity) // 更新已选人数
+            }
+          })
+          
+          // 清空已选课程列表
+          selectedCourses.value = []
+        }
+        
+        // 刷新推荐课程
+        refreshRecommendations()
+        
+      } else {
+        console.log('❌ 选课失败，错误码:', response.code, '错误信息:', response.message)
+        const errorMsg = response.message && response.message.trim() !== '' ? response.message : '选课失败，请稍后重试'
+        ElMessage.error(errorMsg)
       }
-    })
-  } catch {
-    // 用户取消
+    } else {
+      // 非标准格式，认为成功
+      console.log('📄 选课非标准格式响应，认为成功')
+      ElMessage.success(`成功选择 ${selectedCourses.value.length} 门课程！`)
+      
+      // 更新选课状态
+      selectedCourses.value.forEach(selectedCourse => {
+        const course = allCourses.value.find(c => c.id === selectedCourse.id)
+        if (course) {
+          course.isSelected = false
+          course.enrolled = Math.min(course.enrolled + 1, course.capacity)
+        }
+      })
+      
+      selectedCourses.value = []
+      refreshRecommendations()
+    }
+    
+  } catch (error) {
+    if (error === 'cancel') {
+      // 用户取消操作
+      return
+    }
+    
+    console.error('选课失败:', error)
+    console.error('错误详情:', error.response?.data)
+    
+    let errorMessage = '选课失败，请稍后重试'
+    if (error.response?.status === 400) {
+      errorMessage = '选课参数错误，请检查课程信息'
+    } else if (error.response?.status === 403) {
+      errorMessage = '选课时间已过或权限不足'
+    } else if (error.response?.status === 409) {
+      errorMessage = '部分课程已选或人数已满'
+    } else if (error.response?.status === 500) {
+      errorMessage = '服务器内部错误，请稍后重试'
+    } else if (error.response?.data?.message) {
+      errorMessage = error.response.data.message
+    }
+    
+    ElMessage.error(errorMessage)
+    
+    // 如果是服务器错误，恢复选择状态，让用户可以重试
+    if (error.response?.status >= 500) {
+      console.log('🔄 服务器错误，恢复选择状态')
+      selectedCourses.value = originalSelection
+      originalSelection.forEach(originalCourse => {
+        const course = allCourses.value.find(c => c.id === originalCourse.id)
+        if (course) {
+          course.isSelected = true
+        }
+      })
+    }
+  } finally {
+    confirmSelectionLoading.value = false
   }
 }
 

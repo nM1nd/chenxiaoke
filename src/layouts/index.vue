@@ -100,6 +100,7 @@ import {
   Expand
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { userApi } from '@/api'
 import AiAssistant from '@/components/AiAssistant.vue'
 import AppFooter from '@/components/AppFooter.vue'
 
@@ -108,10 +109,41 @@ const router = useRouter()
 const isCollapse = ref(false)
 
 const userInfo = ref({
-  name: '张三',
+  name: '同学',
   avatar: '',
-  studentId: '2021001'
+  studentId: ''
 })
+
+// 页面加载时获取用户信息
+const initUserInfo = () => {
+  try {
+    // 优先从localStorage获取用户信息
+    const savedUserInfo = localStorage.getItem('userInfo')
+    if (savedUserInfo) {
+      const parsedUserInfo = JSON.parse(savedUserInfo)
+      userInfo.value = {
+        name: parsedUserInfo.name || parsedUserInfo.username || '同学',
+        avatar: parsedUserInfo.avatar || '',
+        studentId: parsedUserInfo.studentId || ''
+      }
+    } else {
+      // 其次使用登录时保存的用户名
+      const username = localStorage.getItem('username')
+      if (username) {
+        userInfo.value = {
+          name: username,
+          avatar: '',
+          studentId: ''
+        }
+      }
+    }
+  } catch (error) {
+    console.error('获取布局用户信息失败:', error)
+  }
+}
+
+// 组件挂载时初始化用户信息
+initUserInfo()
 
 const menuRoutes = computed(() => {
   return route.matched[0]?.children || []
@@ -125,7 +157,7 @@ const toggleCollapse = () => {
   isCollapse.value = !isCollapse.value
 }
 
-const handleCommand = (command) => {
+const handleCommand = async (command) => {
   switch (command) {
     case 'profile':
       ElMessage.info('个人中心功能开发中')
@@ -134,10 +166,23 @@ const handleCommand = (command) => {
       ElMessage.info('设置功能开发中')
       break
     case 'logout':
+      try {
+        // 发送退出登录请求到API
+        await userApi.logout()
+        ElMessage.success('退出登录成功')
+      } catch (error) {
+        console.error('退出登录请求失败:', error)
+        // 即使API请求失败，也继续本地退出
+        ElMessage.success('已退出登录')
+      }
+      
       // 清除登录状态
       localStorage.removeItem('isAuthenticated')
       localStorage.removeItem('username')
-      ElMessage.success('退出登录成功')
+      localStorage.removeItem('token')
+      localStorage.removeItem('userInfo')
+      localStorage.removeItem('tempUserInfo')
+      
       // 跳转到登录页
       router.push('/login')
       break

@@ -83,7 +83,7 @@
 
               <div class="form-options">
                 <el-checkbox v-model="rememberMe">记住我</el-checkbox>
-                <el-link type="primary" :underline="false">忘记密码？</el-link>
+                <el-link type="primary" :underline="false" @click="handleForgotPassword">忘记密码？</el-link>
               </div>
 
               <el-button
@@ -133,6 +133,15 @@
                   placeholder="请输入邮箱"
                   size="large"
                   :prefix-icon="Message"
+                />
+              </el-form-item>
+
+              <el-form-item prop="universityName">
+                <el-input
+                  v-model="registerForm.universityName"
+                  placeholder="请输入高校名称"
+                  size="large"
+                  :prefix-icon="School"
                 />
               </el-form-item>
 
@@ -188,7 +197,7 @@
 <script setup>
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   School,
   User,
@@ -199,6 +208,7 @@ import {
   Briefcase
 } from '@element-plus/icons-vue'
 import { themeColors } from '@/styles/variables.js'
+import { userApi } from '@/api/user.js'
 
 const router = useRouter()
 
@@ -221,6 +231,7 @@ const registerForm = reactive({
   studentId: '',
   username: '',
   email: '',
+  universityName: '',
   password: '',
   confirmPassword: '',
   agreement: false
@@ -269,6 +280,10 @@ const registerRules = {
     { required: true, message: '请输入邮箱', trigger: 'blur' },
     { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
   ],
+  universityName: [
+    { required: true, message: '请输入高校名称', trigger: 'blur' },
+    { min: 2, max: 50, message: '高校名称长度在2到50个字符', trigger: 'blur' }
+  ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
     { min: 6, message: '密码长度不能少于6位', trigger: 'blur' }
@@ -286,19 +301,101 @@ const registerRules = {
 const handleLogin = async () => {
   if (!loginFormRef.value) return
 
-  await loginFormRef.value.validate((valid) => {
+  await loginFormRef.value.validate(async (valid) => {
     if (valid) {
       loginLoading.value = true
-      // 模拟登录请求
-      setTimeout(() => {
-        loginLoading.value = false
+      try {
+        console.log('开始登录请求:', { username: loginForm.username })
+        
+        // 发送真实登录请求
+        const response = await userApi.login({
+          username: loginForm.username,
+          password: loginForm.password
+        })
+        
+        console.log('登录响应:', response)
+        
+        // 检查响应格式：标准格式 {code, message, data, errors}
+        if (response && response.code === 401) {
+          // 401错误，用户名或密码错误
+          throw new Error(response.message || '用户名或密码错误')
+        }
+        
+        // 检查是否有其他错误码
+        if (response && response.code !== 200 && response.code !== 0) {
+          throw new Error(response.message || '登录失败')
+        }
+        
+        // 获取实际数据（在data字段中）
+        const data = response?.data || response
+        
+        // 验证登录是否成功（有token或user信息）
+        if (!data || (!data.token && !data.user)) {
+          throw new Error('登录响应无效，请重试')
+        }
+        
+        // 保存token
+        if (data.token) {
+          localStorage.setItem('token', data.token)
+          console.log('Token已保存:', data.token)
+        }
+        
+        // 保存用户信息
+        if (data.user) {
+          localStorage.setItem('userInfo', JSON.stringify(data.user))
+          console.log('用户信息已保存:', data.user)
+        } else {
+          // 如果API没有返回用户信息，尝试使用注册时保存的临时信息
+          const tempUserInfo = localStorage.getItem('tempUserInfo')
+          if (tempUserInfo) {
+            localStorage.setItem('userInfo', tempUserInfo)
+            localStorage.removeItem('tempUserInfo') // 清除临时信息
+            console.log('使用临时用户信息')
+          } else {
+            // 最后的fallback，创建基本的用户信息
+            const basicUserInfo = {
+              name: loginForm.username,
+              username: loginForm.username
+            }
+            localStorage.setItem('userInfo', JSON.stringify(basicUserInfo))
+            console.log('创建基本用户信息:', basicUserInfo)
+          }
+        }
+        
         // 设置登录状态
         localStorage.setItem('isAuthenticated', 'true')
         localStorage.setItem('username', loginForm.username)
+        console.log('登录状态已设置')
+        
         ElMessage.success('登录成功')
         // 跳转到首页
+        console.log('准备跳转到首页')
         router.push('/home')
-      }, 1000)
+      } catch (error) {
+        console.error('登录失败:', error)
+        console.error('错误详情:', {
+          status: error.response?.status,
+          data: error.response?.data,
+          message: error.message
+        })
+        
+        // 处理不同类型的错误
+        let errorMessage = '登录失败'
+        if (error.response?.status === 401) {
+          errorMessage = '用户名或密码错误'
+        } else if (error.response?.status === 500) {
+          errorMessage = '服务器内部错误，请稍后重试'
+        } else if (error.response?.data?.message) {
+          errorMessage = error.response.data.message
+        } else if (error.message && !error.message.includes('用户名或密码错误')) {
+          errorMessage = error.message
+        }
+        
+        console.log('显示错误消息:', errorMessage)
+        ElMessage.error(errorMessage)
+      } finally {
+        loginLoading.value = false
+      }
     } else {
       ElMessage.error('请填写完整的登录信息')
     }
@@ -309,31 +406,196 @@ const handleLogin = async () => {
 const handleRegister = async () => {
   if (!registerFormRef.value) return
 
-  await registerFormRef.value.validate((valid) => {
+  await registerFormRef.value.validate(async (valid) => {
     if (valid) {
       registerLoading.value = true
-      // 模拟注册请求
-      setTimeout(() => {
-        registerLoading.value = false
+      
+      // 准备注册数据 - 移到try外部，确保在catch中也能访问
+      const registerData = {
+        studentId: registerForm.studentId,
+        username: registerForm.username,
+        email: registerForm.email,
+        universityName: registerForm.universityName,
+        password: registerForm.password
+      }
+      
+      try {
+        
+        // 打印调试信息
+        console.log('注册数据:', registerData)
+        console.log('请求URL:', 'http://192.168.1.132:8082/api/auth/register')
+        
+        // 发送完整注册信息到指定API
+        const response = await userApi.register(registerData)
+        console.log('注册响应:', response)
+        
+        // 详细检查响应格式
+        console.log('📊 注册响应类型:', typeof response)
+        console.log('📝 注册响应内容:', JSON.stringify(response, null, 2))
+        
+        // 检查是否为标准格式 {code, message, data, errors}
+        if (response && typeof response === 'object' && 'code' in response) {
+          console.log('🏷️ 标准格式响应，code:', response.code, 'message:', response.message)
+          
+          // 成功码判断
+          const successCodes = [200, 0, 201, 204]
+          if (successCodes.includes(response.code)) {
+            console.log('✅ 注册成功，响应码:', response.code)
+            // 注册成功，继续执行后续逻辑
+          } else {
+            console.log('❌ 注册失败，错误码:', response.code, '错误信息:', response.message)
+            // 如果API返回了具体的错误信息，使用它；否则使用默认信息
+            const errorMsg = response.message && response.message.trim() !== '' ? response.message : '注册失败'
+            throw new Error(errorMsg)
+          }
+        } else {
+          // 非标准格式，但有响应，通常表示成功
+          console.log('✅ 非标准格式响应，认为注册成功')
+        }
+        
         ElMessage.success('注册成功，请登录')
         // 切换到登录标签
         activeTab.value = 'login'
+        
+        // 保存注册时的用户信息到localStorage，以备登录后使用
+        const tempUserInfo = {
+          name: registerForm.username,
+          username: registerForm.username,
+          email: registerForm.email,
+          studentId: registerForm.studentId,
+          universityName: registerForm.universityName
+        }
+        localStorage.setItem('tempUserInfo', JSON.stringify(tempUserInfo))
+        
         // 清空注册表单
         Object.assign(registerForm, {
           studentId: '',
           username: '',
           email: '',
+          universityName: '',
           password: '',
           confirmPassword: '',
           agreement: false
         })
         // 填充用户名到登录表单
         loginForm.username = registerForm.username
-      }, 1000)
+      } catch (error) {
+        console.error('注册失败:', error)
+        console.error('错误详情:', error.response?.data)
+        console.error('发送的数据:', registerData)
+        if (error.response?.data?.errors) {
+          console.error('字段验证错误:', error.response.data.errors)
+        }
+        
+        // 处理不同类型的错误
+        let errorMessage = '注册失败'
+        
+        // 首先检查业务逻辑抛出的错误（排除空消息和"注册失败"）
+        if (error.message && error.message !== '注册失败' && error.message.trim() !== '') {
+          errorMessage = error.message
+        } 
+        // 然后检查HTTP状态码错误
+        else if (error.response?.status === 409) {
+          errorMessage = '用户名或学号已存在'
+        } else if (error.response?.status === 400) {
+          errorMessage = '输入信息有误，请检查后重试'
+        } else if (error.response?.status === 500) {
+          errorMessage = '服务器内部错误，请稍后重试'
+        } else if (error.response?.data?.message) {
+          errorMessage = error.response.data.message
+        } else if (error.response?.data?.error) {
+          errorMessage = error.response.data.error
+        } else if (error.message) {
+          errorMessage = error.message
+        }
+        
+        console.log('显示错误消息:', errorMessage)
+        ElMessage.error(errorMessage)
+      } finally {
+        registerLoading.value = false
+      }
     } else {
       ElMessage.error('请填写完整的注册信息')
     }
   })
+}
+
+// 处理忘记密码
+const handleForgotPassword = async () => {
+  try {
+    // 使用Element Plus的输入框
+    const { value: email } = await ElMessageBox.prompt(
+      '请输入您的注册邮箱，我们将向您发送密码重置链接',
+      '忘记密码',
+      {
+        confirmButtonText: '发送重置链接',
+        cancelButtonText: '取消',
+        inputPattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+        inputErrorMessage: '请输入有效的邮箱地址',
+        inputPlaceholder: '请输入邮箱地址'
+      }
+    )
+
+    if (!email) return
+
+    console.log('准备发送忘记密码请求:', { email })
+    console.log('请求URL:', 'http://192.168.1.132:8082/api/auth/forgot-password')
+
+    // 发送忘记密码请求
+    const response = await userApi.forgotPassword({ email })
+    console.log('忘记密码响应:', response)
+
+    // 检查响应格式
+    if (response && typeof response === 'object' && 'code' in response) {
+      console.log('🏷️ 忘记密码标准格式响应，code:', response.code, 'message:', response.message)
+      
+      const successCodes = [200, 0, 201, 204]
+      if (successCodes.includes(response.code)) {
+        console.log('✅ 忘记密码请求成功，响应码:', response.code)
+        ElMessage.success('密码重置链接已发送到您的邮箱，请查收')
+        
+        // 如果响应中包含重置令牌，可以直接跳转到重置页面
+        if (response.data && response.data.resetToken) {
+          console.log('🔗 跳转到重置密码页面，携带令牌')
+          router.push({
+            path: '/reset-password',
+            query: { token: response.data.resetToken }
+          })
+        }
+      } else {
+        console.log('❌ 忘记密码请求失败，错误码:', response.code, '错误信息:', response.message)
+        const errorMsg = response.message && response.message.trim() !== '' ? response.message : '发送失败，请稍后重试'
+        ElMessage.error(errorMsg)
+      }
+    } else {
+      console.log('✅ 忘记密码非标准格式响应，认为成功')
+      ElMessage.success('密码重置链接已发送到您的邮箱，请查收')
+    }
+  } catch (error) {
+    if (error === 'cancel') {
+      console.log('用户取消忘记密码操作')
+      return
+    }
+
+    console.error('忘记密码请求失败:', error)
+    console.error('错误详情:', error.response?.data)
+    
+    let errorMessage = '发送失败，请稍后重试'
+    if (error.response?.status === 404) {
+      errorMessage = '该邮箱未注册'
+    } else if (error.response?.status === 400) {
+      errorMessage = '邮箱格式不正确'
+    } else if (error.response?.status === 500) {
+      errorMessage = '服务器内部错误，请稍后重试'
+    } else if (error.response?.data?.message) {
+      errorMessage = error.response.data.message
+    } else if (error.message && !error.message.includes('取消')) {
+      errorMessage = error.message
+    }
+    
+    console.log('显示错误消息:', errorMessage)
+    ElMessage.error(errorMessage)
+  }
 }
 </script>
 
@@ -375,8 +637,8 @@ const handleRegister = async () => {
 .login-wrapper {
   width: 90%;
   max-width: 1200px;
-  height: 80vh;
-  max-height: 700px;
+  height: 85vh;
+  max-height: 800px;
   display: flex;
   background: white;
   border-radius: 20px;
@@ -460,6 +722,25 @@ const handleRegister = async () => {
   }
 }
 
+// 自定义滚动条样式
+.form-container::-webkit-scrollbar {
+  width: 4px;
+}
+
+.form-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 2px;
+}
+
+.form-container::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 2px;
+}
+
+.form-container::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
 .login-right {
   flex: 1;
   display: flex;
@@ -471,6 +752,9 @@ const handleRegister = async () => {
   .form-container {
     width: 100%;
     max-width: 420px;
+    max-height: 100%;
+    overflow-y: auto;
+    padding-right: 8px;
 
     .tab-switch {
       display: flex;
@@ -514,13 +798,13 @@ const handleRegister = async () => {
       .form-subtitle {
         font-size: 14px;
         color: $text-secondary;
-        margin: 0 0 32px 0;
+        margin: 0 0 24px 0;
       }
 
       .login-form,
       .register-form {
         :deep(.el-form-item) {
-          margin-bottom: 24px;
+          margin-bottom: 20px;
         }
 
         :deep(.el-input__wrapper) {
@@ -536,7 +820,7 @@ const handleRegister = async () => {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 24px;
+          margin-bottom: 20px;
           font-size: 14px;
         }
 
@@ -559,6 +843,25 @@ const handleRegister = async () => {
       }
     }
   }
+}
+
+// 自定义滚动条样式
+.form-container::-webkit-scrollbar {
+  width: 4px;
+}
+
+.form-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 2px;
+}
+
+.form-container::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 2px;
+}
+
+.form-container::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
 }
 
 // 响应式设计
@@ -631,6 +934,25 @@ const handleRegister = async () => {
       }
     }
   }
+}
+
+// 自定义滚动条样式
+.form-container::-webkit-scrollbar {
+  width: 4px;
+}
+
+.form-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 2px;
+}
+
+.form-container::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 2px;
+}
+
+.form-container::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
 }
 </style>
 

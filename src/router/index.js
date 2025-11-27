@@ -9,6 +9,12 @@ const routes = [
     meta: { title: '登录', requiresAuth: false }
   },
   {
+    path: '/reset-password',
+    name: 'ResetPassword',
+    component: () => import('@/views/ResetPassword.vue'),
+    meta: { title: '重置密码', requiresAuth: false }
+  },
+  {
     path: '/',
     component: Layout,
     redirect: '/home',
