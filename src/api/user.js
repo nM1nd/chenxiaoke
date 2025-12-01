@@ -78,9 +78,79 @@ export const userApi = {
     return request.post(`/progress/assignments/${assignmentId}/submit`, data)
   },
   
+  // 获取课程列表
+  getProgressCourses() {
+    return request.get('/progress/courses')
+  },
+  
+  // 获取学分获取趋势数据
+  getCreditsTrend() {
+    return request.get('/progress/credits-trend')
+  },
+  
+  // 获取学习时长分布数据
+  getTimeDistribution() {
+    return request.get('/progress/time-distribution')
+  },
+  
+  // 获取作业列表
+  getAssignments() {
+    return request.get('/progress/assignments')
+  },
+  
+  // 获取考试列表
+  getExams() {
+    return request.get('/progress/exams')
+  },
+  
+  // 获取课程详情
+  getCourseDetail(courseId) {
+    return request.get(`/progress/courses/${courseId}`)
+  },
+  
   // 获取作业详情
   getAssignmentDetail(assignmentId) {
     return request.get(`/progress/assignments/${assignmentId}`)
+  },
+  
+  // 获取学习进度统计数据
+  getProgressStats() {
+    return request.get('/progress/stats')
+  },
+  
+  // 获取学习统计图表数据
+  getStudyChartData() {
+    return request.get('/home/study-chart')
+  },
+  
+  // 获取学习统计数据
+  getStudyStats() {
+    return request.get('/home/study-stats')
+  },
+  
+  // 获取学生技能分布数据
+  getSkillsData() {
+    return request.get('/home/skills')
+  },
+  
+  // 获取最近学习的课程
+  getRecentCourses() {
+    return request.get('/home/recent-courses')
+  },
+  
+  // 获取学习日历事件
+  getCalendarEvents() {
+    return request.get('/home/calendar-events')
+  },
+  
+  // 获取今日事件列表
+  getTodayEvents() {
+    return request.get('/home/today-events')
+  },
+  
+  // 获取通知公告列表
+  getNotices() {
+    return request.get('/home/notices')
   },
   
 
@@ -89,20 +159,14 @@ export const userApi = {
     return request.post('/auth/logout')
   },
   
+  // 获取用户信息 (认证端点)
+  getAuthUserInfo() {
+    return request.get('/auth/me')
+  },
+  
   // 获取用户信息
   getUserInfo() {
-    return request.get('/user/info').catch(error => {
-      // 如果是401错误，返回mock数据
-      if (error.response?.status === 401) {
-        console.log('认证失败，返回mock用户信息')
-        return {
-          name: localStorage.getItem('username') || '同学',
-          username: localStorage.getItem('username') || 'user'
-        }
-      }
-      // 其他错误则重新抛出
-      throw error
-    })
+    return request.get('/user/info')
   },
   
   // 更新用户信息
@@ -110,21 +174,18 @@ export const userApi = {
     return request.put('/user/info', data)
   },
   
-  // 获取统计数据
+  // 获取统计数据 (首页)
+  getHomeStats() {
+    return request.get('/home/stats')
+  },
+  
+  // 获取学习统计图表数据
+  getStudyChart() {
+    return request.get('/home/study-chart')
+  },
+  
+  // 获取统计数据 (用户端点)
   getStats() {
-    return request.get('/user/stats').catch(error => {
-      // 如果是401错误，返回mock数据
-      if (error.response?.status === 401) {
-        console.log('认证失败，返回mock统计数据')
-        return {
-          totalCourses: 8,
-          completionRate: 75,
-          completedCourses: 6,
-          ongoingCourses: 2
-        }
-      }
-      // 其他错误则重新抛出
-      throw error
-    })
+    return request.get('/user/stats')
   }
 }

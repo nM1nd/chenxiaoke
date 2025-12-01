@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API测试 - 登录与推荐课程</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background-color: #fafafa;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #555;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .response {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 15px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .success {
+            border-left: 4px solid #28a745;
+        }
+        .error {
+            border-left: 4px solid #dc3545;
+        }
+        .info {
+            border-left: 4px solid #17a2b8;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 API测试：登录与推荐课程</h1>
+        
+        <!-- 状态显示 -->
+        <div id="status" class="status info" style="display: none;"></div>
+        
+        <!-- 登录测试 -->
+        <div class="test-section">
+            <h3>📝 1. 用户登录测试</h3>
+            <div class="form-group">
+                <label for="username">用户名/学号:</label>
+                <input type="text" id="username" placeholder="请输入用户名或学号" value="">
+            </div>
+            <div class="form-group">
+                <label for="password">密码:</label>
+                <input type="password" id="password" placeholder="请输入密码" value="">
+            </div>
+            <button onclick="testLogin()">🚀 登录并获取Token</button>
+            <button onclick="clearStorage()">🗑️ 清除本地存储</button>
+            <div id="loginResponse" class="response"></div>
+        </div>
+        
+        <!-- 推荐课程测试 -->
+        <div class="test-section">
+            <h3>⭐ 2. 推荐课程API测试</h3>
+            <button onclick="testRecommendedCourses()">📚 获取推荐课程</button>
+            <button onclick="checkTokenStatus()">🔍 检查Token状态</button>
+            <div id="recommendedResponse" class="response"></div>
+        </div>
+        
+        <!-- 完整流程测试 -->
+        <div class="test-section">
+            <h3>🔄 3. 完整流程测试</h3>
+            <button onclick="testFullFlow()">🎯 完整登录→推荐课程流程</button>
+            <div id="fullFlowResponse" class="response"></div>
+        </div>
+        
+        <!-- 调试信息 -->
+        <div class="test-section">
+            <h3>🐛 调试信息</h3>
+            <button onclick="showDebugInfo()">📊 显示调试信息</button>
+            <div id="debugResponse" class="response"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://192.168.1.157:8082/api';
+        
+        // 显示状态信息
+        function showStatus(message, type = 'info') {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+            statusEl.style.display = 'block';
+            
+            // 3秒后自动隐藏
+            setTimeout(() => {
+                statusEl.style.display = 'none';
+            }, 3000);
+        }
+        
+        // 测试登录
+        async function testLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const responseEl = document.getElementById('loginResponse');
+            
+            if (!username || !password) {
+                showStatus('请输入用户名和密码', 'error');
+                return;
+            }
+            
+            responseEl.textContent = '正在登录...';
+            responseEl.className = 'response info';
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await response.json();
+                
+                // 显示响应
+                responseEl.textContent = `状态: ${response.status}\n${JSON.stringify(data, null, 2)}`;
+                
+                if (response.ok && (data.code === 200 || data.code === 0)) {
+                    responseEl.className = 'response success';
+                    
+                    // 保存token
+                    const token = data.data?.token || data.token;
+                    const refreshToken = data.data?.refreshToken || data.refreshToken;
+                    
+                    if (token) {
+                        localStorage.setItem('token', token);
+                        showStatus(`✅ 登录成功！Token已保存`, 'success');
+                        
+                        if (refreshToken) {
+                            localStorage.setItem('refreshToken', refreshToken);
+                        }
+                        
+                        console.log('Token已保存:', token);
+                    } else {
+                        showStatus('⚠️ 登录成功但未获取到Token', 'error');
+                    }
+                } else {
+                    responseEl.className = 'response error';
+                    showStatus(`❌ 登录失败: ${data.message || '未知错误'}`, 'error');
+                }
+                
+            } catch (error) {
+                responseEl.textContent = `请求失败: ${error.message}`;
+                responseEl.className = 'response error';
+                showStatus('❌ 网络请求失败', 'error');
+            }
+        }
+        
+        // 测试推荐课程API
+        async function testRecommendedCourses() {
+            const responseEl = document.getElementById('recommendedResponse');
+            const token = localStorage.getItem('token');
+            
+            if (!token) {
+                responseEl.textContent = '错误: 没有找到Token，请先登录';
+                responseEl.className = 'response error';
+                showStatus('❌ 请先登录获取Token', 'error');
+                return;
+            }
+            
+            responseEl.textContent = '正在获取推荐课程...';
+            responseEl.className = 'response info';
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/courses/recommended`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                // 显示响应
+                responseEl.textContent = `状态: ${response.status}\n${JSON.stringify(data, null, 2)}`;
+                
+                if (response.ok && (data.code === 200 || data.code === 0)) {
+                    responseEl.className = 'response success';
+                    showStatus(`✅ 成功获取推荐课程！`, 'success');
+                } else {
+                    responseEl.className = 'response error';
+                    showStatus(`❌ 获取推荐课程失败: ${data.message || '未知错误'}`, 'error');
+                }
+                
+            } catch (error) {
+                responseEl.textContent = `请求失败: ${error.message}`;
+                responseEl.className = 'response error';
+                showStatus('❌ 网络请求失败', 'error');
+            }
+        }
+        
+        // 检查Token状态
+        function checkTokenStatus() {
+            const responseEl = document.getElementById('recommendedResponse');
+            const token = localStorage.getItem('token');
+            const refreshToken = localStorage.getItem('refreshToken');
+            
+            const status = {
+                hasToken: !!token,
+                tokenLength: token ? token.length : 0,
+                tokenPreview: token ? token.substring(0, 50) + '...' : '无',
+                hasRefreshToken: !!refreshToken,
+                storageKeys: Object.keys(localStorage)
+            };
+            
+            responseEl.textContent = JSON.stringify(status, null, 2);
+            responseEl.className = token ? 'response success' : 'response error';
+            
+            showStatus(token ? '✅ Token状态正常' : '❌ 未找到Token', token ? 'success' : 'error');
+        }
+        
+        // 完整流程测试
+        async function testFullFlow() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const responseEl = document.getElementById('fullFlowResponse');
+            
+            if (!username || !password) {
+                showStatus('请先输入用户名和密码', 'error');
+                return;
+            }
+            
+            responseEl.textContent = '🔄 开始完整流程测试...\n\n';
+            responseEl.className = 'response info';
+            
+            try {
+                // 步骤1: 登录
+                responseEl.textContent += '📝 步骤1: 登录中...\n';
+                
+                const loginResponse = await fetch(`${API_BASE_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const loginData = await loginResponse.json();
+                responseEl.textContent += `登录状态: ${loginResponse.status}\n`;
+                
+                if (!loginResponse.ok || (loginData.code !== 200 && loginData.code !== 0)) {
+                    throw new Error(`登录失败: ${loginData.message || '未知错误'}`);
+                }
+                
+                const token = loginData.data?.token || loginData.token;
+                if (!token) {
+                    throw new Error('登录成功但未获取到Token');
+                }
+                
+                localStorage.setItem('token', token);
+                responseEl.textContent += `✅ 登录成功！Token已保存\n\n`;
+                
+                // 步骤2: 获取推荐课程
+                responseEl.textContent += '⭐ 步骤2: 获取推荐课程...\n';
+                
+                const recommendedResponse = await fetch(`${API_BASE_URL}/courses/recommended`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const recommendedData = await recommendedResponse.json();
+                responseEl.textContent += `推荐课程状态: ${recommendedResponse.status}\n`;
+                
+                if (recommendedResponse.ok && (recommendedData.code === 200 || recommendedData.code === 0)) {
+                    responseEl.textContent += `✅ 推荐课程获取成功！\n`;
+                    responseEl.textContent += `课程数量: ${JSON.stringify(recommendedData, null, 2)}\n`;
+                    responseEl.className = 'response success';
+                    showStatus('🎉 完整流程测试成功！', 'success');
+                } else {
+                    throw new Error(`获取推荐课程失败: ${recommendedData.message || '未知错误'}`);
+                }
+                
+            } catch (error) {
+                responseEl.textContent += `❌ 流程失败: ${error.message}\n`;
+                responseEl.className = 'response error';
+                showStatus('❌ 完整流程测试失败', 'error');
+            }
+        }
+        
+        // 清除本地存储
+        function clearStorage() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('userInfo');
+            localStorage.removeItem('isAuthenticated');
+            showStatus('🗑️ 本地存储已清除', 'info');
+        }
+        
+        // 显示调试信息
+        function showDebugInfo() {
+            const responseEl = document.getElementById('debugResponse');
+            
+            const debugInfo = {
+                currentTime: new Date().toISOString(),
+                localStorage: {
+                    keys: Object.keys(localStorage),
+                    token: localStorage.getItem('token') ? '已设置' : '未设置',
+                    tokenLength: localStorage.getItem('token')?.length || 0
+                },
+                apiConfig: {
+                    baseURL: API_BASE_URL,
+                    loginEndpoint: `${API_BASE_URL}/auth/login`,
+                    recommendedEndpoint: `${API_BASE_URL}/courses/recommended`
+                },
+                browserInfo: {
+                    userAgent: navigator.userAgent,
+                    language: navigator.language,
+                    platform: navigator.platform
+                }
+            };
+            
+            responseEl.textContent = JSON.stringify(debugInfo, null, 2);
+            responseEl.className = 'response info';
+        }
+        
+        // 页面加载时检查Token状态
+        window.onload = function() {
+            checkTokenStatus();
+        };
+    </script>
+</body>
+</html>

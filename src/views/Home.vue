@@ -153,7 +153,7 @@
             </template>
           </el-calendar>
           <div class="calendar-events">
-            <div v-for="event in todayEvents" :key="event.id" class="event-item">
+            <div v-for="event in todayEventsList" :key="event.id" class="event-item">
               <el-tag :type="event.type" size="small">{{ event.type === 'warning' ? '作业' : '考试' }}</el-tag>
               <span class="event-title">{{ event.title }}</span>
             </div>
@@ -346,7 +346,12 @@ onMounted(async () => {
     fetchUserInfo(),
     fetchRecentCourses(),
     fetchStats(),
-    fetchTodos()
+    fetchStudyChart(),
+    fetchTodos(),
+    fetchSkillsData(),
+    fetchCalendarEvents(),
+    fetchTodayEvents(),
+    fetchNotices()
   ])
 })
 
@@ -392,15 +397,60 @@ const fetchUserInfo = async () => {
 // 获取最近课程
 const fetchRecentCourses = async () => {
   try {
-    const data = await courseApi.getCourses({ 
-      page: 1, 
-      limit: 3,
-      status: 'recent' 
-    })
-    recentCourses.value = data.list
+    console.log('📚 获取最近学习的课程...')
+    console.log('请求URL: http://192.168.1.132:8082/api/home/recent-courses')
+    
+    const response = await userApi.getRecentCourses()
+    console.log('📝 最近课程响应:', response)
+    
+    // 检查响应格式
+    if (response && typeof response === 'object' && 'code' in response) {
+      console.log('🏷️ 最近课程标准格式响应，code:', response.code, 'message:', response.message)
+      
+      const successCodes = [200, 0, 201, 204]
+      if (successCodes.includes(response.code)) {
+        console.log('✅ 获取最近课程成功，响应码:', response.code)
+        recentCourses.value = response.data || response || []
+      } else {
+        console.log('❌ 获取最近课程失败，错误码:', response.code, '错误信息:', response.message)
+        // 使用默认课程数据作为fallback
+        recentCourses.value = [
+          {
+            id: 1,
+            name: 'Vue.js前端开发',
+            enterprise: '李氏企业',
+            credits: 1,
+            progress: 65,
+            status: '进行中'
+          },
+          {
+            id: 2,
+            name: 'Python数据分析',
+            enterprise: '王氏企业',
+            credits: 1,
+            progress: 80,
+            status: '进行中'
+          },
+          {
+            id: 3,
+            name: '数据库系统原理',
+            enterprise: '张氏企业',
+            credits: 1,
+            progress: 100,
+            status: '已完成'
+          }
+        ]
+      }
+    } else {
+      // 非标准格式，直接使用响应数据
+      console.log('📄 最近课程非标准格式响应，直接使用数据')
+      recentCourses.value = Array.isArray(response) ? response : []
+    }
   } catch (error) {
-    console.error('获取课程列表失败:', error)
-    // 如果API失败，使用默认值作为fallback
+    console.error('获取最近课程失败:', error)
+    console.error('错误详情:', error.response?.data)
+    
+    // 如果API失败，使用默认课程数据作为fallback
     recentCourses.value = [
       {
         id: 1,
@@ -433,14 +483,93 @@ const fetchRecentCourses = async () => {
 // 获取统计数据
 const fetchStats = async () => {
   try {
-    const data = await userApi.getStats()
-    stats.value = data
+    console.log('📊 获取首页统计数据...')
+    console.log('请求URL: http://192.168.1.132:8082/api/home/stats')
+    
+    const response = await userApi.getHomeStats()
+    console.log('📝 首页统计响应:', response)
+    
+    // 检查响应格式
+    let statsData = {}
+    if (response && typeof response === 'object' && 'data' in response) {
+      // 如果响应有data字段
+      statsData = response.data
+    } else if (response && typeof response === 'object') {
+      // 直接使用响应数据
+      statsData = response
+    }
+    
+    // 确保基本字段存在
+    stats.value = {
+      totalCourses: statsData.totalCourses || 0,
+      completionRate: statsData.completionRate || 0,
+      completedCourses: statsData.completedCourses || 0,
+      ongoingCourses: statsData.ongoingCourses || 0,
+      ...statsData // 保留其他字段
+    }
+    
+    console.log('✅ 首页统计数据加载成功:', stats.value)
   } catch (error) {
-    console.error('获取统计数据失败:', error)
+    console.error('❌ 获取首页统计数据失败:', error)
+    console.error('错误详情:', error.response?.data)
+    
     // 如果API失败，使用默认值作为fallback
     stats.value = {
       totalCourses: 8,
-      completionRate: 75
+      completionRate: 75,
+      completedCourses: 6,
+      ongoingCourses: 2
+    }
+  }
+}
+
+// 获取学习图表数据
+const fetchStudyChart = async () => {
+  try {
+    console.log('📈 获取学习图表数据...')
+    console.log('请求URL: http://192.168.1.132:8082/api/home/study-chart')
+    
+    const response = await userApi.getStudyChartData()
+    console.log('📝 学习图表响应:', response)
+    
+    // 检查响应格式
+    let chartData = {}
+    if (response && typeof response === 'object' && 'data' in response) {
+      // 如果响应有data字段
+      chartData = response.data
+    } else if (response && typeof response === 'object') {
+      // 直接使用响应数据
+      chartData = response
+    }
+    
+    // 确保基本结构存在
+    studyHoursData.value = {
+      week: {
+        days: chartData.week?.days || ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+        hours: chartData.week?.hours || [2.5, 3.0, 2.0, 3.5, 2.5, 1.5, 1.0]
+      },
+      month: {
+        days: chartData.month?.days || ['第1周', '第2周', '第3周', '第4周'],
+        hours: chartData.month?.hours || [15, 18, 16, 14]
+      },
+      ...chartData // 保留其他字段
+    }
+    
+    console.log('✅ 学习图表数据加载成功:', studyHoursData.value)
+  } catch (error) {
+    console.error('❌ 获取学习图表数据失败:', error)
+    console.error('错误详情:', error.response?.data)
+    
+    // 如果API失败，使用默认值作为fallback
+    studyHoursData.value = {
+      week: {
+        days: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+        hours: [2.5, 3.0, 2.0, 3.5, 2.5, 1.5, 1.0]
+      },
+      month: {
+        days: ['第1周', '第2周', '第3周', '第4周'],
+        hours: [15, 18, 16, 14]
+      }
     }
   }
 }
@@ -501,6 +630,208 @@ const fetchTodos = async () => {
   }
 }
 
+// 获取学生技能数据
+const fetchSkillsData = async () => {
+  try {
+    console.log('🎯 获取学生技能数据...')
+    console.log('请求URL: http://192.168.1.132:8082/api/home/skills')
+    
+    const response = await userApi.getSkillsData()
+    console.log('📝 技能数据响应:', response)
+    
+    // 检查响应格式
+    if (response && typeof response === 'object' && 'code' in response) {
+      console.log('🏷️ 技能数据标准格式响应，code:', response.code, 'message:', response.message)
+      
+      const successCodes = [200, 0, 201, 204]
+      if (successCodes.includes(response.code)) {
+        console.log('✅ 获取技能数据成功，响应码:', response.code)
+        skillsData.value = response.data || response || []
+      } else {
+        console.log('❌ 获取技能数据失败，错误码:', response.code, '错误信息:', response.message)
+        // 使用默认技能数据作为fallback
+        skillsData.value = [
+          { name: 'Vue.js前端开发', value: 35 },
+          { name: 'React高级开发', value: 25 },
+          { name: 'Python数据分析', value: 20 },
+          { name: '数据库系统', value: 12 },
+          { name: 'Node.js后端', value: 8 }
+        ]
+      }
+    } else {
+      // 非标准格式，直接使用响应数据
+      console.log('📄 技能数据非标准格式响应，直接使用数据')
+      skillsData.value = Array.isArray(response) ? response : []
+    }
+  } catch (error) {
+    console.error('获取技能数据失败:', error)
+    console.error('错误详情:', error.response?.data)
+    
+    // 如果API失败，使用默认技能数据作为fallback
+    skillsData.value = [
+      { name: 'Vue.js前端开发', value: 35 },
+      { name: 'React高级开发', value: 25 },
+      { name: 'Python数据分析', value: 20 },
+      { name: '数据库系统', value: 12 },
+      { name: 'Node.js后端', value: 8 }
+    ]
+  }
+}
+
+// 获取学习日历事件
+const fetchCalendarEvents = async () => {
+  try {
+    console.log('📅 获取学习日历事件...')
+    console.log('请求URL: http://192.168.1.132:8082/api/home/calendar-events')
+    
+    const response = await userApi.getCalendarEvents()
+    console.log('📝 日历事件响应:', response)
+    
+    // 检查响应格式
+    if (response && typeof response === 'object' && 'code' in response) {
+      console.log('🏷️ 日历事件标准格式响应，code:', response.code, 'message:', response.message)
+      
+      const successCodes = [200, 0, 201, 204]
+      if (successCodes.includes(response.code)) {
+        console.log('✅ 获取日历事件成功，响应码:', response.code)
+        calendarEvents.value = response.data || response || []
+      } else {
+        console.log('❌ 获取日历事件失败，错误码:', response.code, '错误信息:', response.message)
+        // 使用默认日历事件作为fallback
+        calendarEvents.value = [
+          { date: '2024-01-20', title: 'Vue.js作业截止', type: 'warning' },
+          { date: '2024-01-22', title: '数据结构复习', type: 'info' },
+          { date: '2024-01-25', title: 'Python数据分析考试', type: 'danger' }
+        ]
+      }
+    } else {
+      // 非标准格式，直接使用响应数据
+      console.log('📄 日历事件非标准格式响应，直接使用数据')
+      calendarEvents.value = Array.isArray(response) ? response : []
+    }
+  } catch (error) {
+    console.error('获取日历事件失败:', error)
+    console.error('错误详情:', error.response?.data)
+    
+    // 如果API失败，使用默认日历事件作为fallback
+    calendarEvents.value = [
+      { date: '2024-01-20', title: 'Vue.js作业截止', type: 'warning' },
+      { date: '2024-01-22', title: '数据结构复习', type: 'info' },
+      { date: '2024-01-25', title: 'Python数据分析考试', type: 'danger' }
+    ]
+  }
+}
+
+// 获取今日事件列表
+const fetchTodayEvents = async () => {
+  try {
+    console.log('📅 获取今日事件列表...')
+    console.log('请求URL: http://192.168.1.132:8082/api/home/today-events')
+    
+    const response = await userApi.getTodayEvents()
+    console.log('📝 今日事件响应:', response)
+    
+    // 检查响应格式
+    if (response && typeof response === 'object' && 'code' in response) {
+      console.log('🏷️ 今日事件标准格式响应，code:', response.code, 'message:', response.message)
+      
+      const successCodes = [200, 0, 201, 204]
+      if (successCodes.includes(response.code)) {
+        console.log('✅ 获取今日事件成功，响应码:', response.code)
+        todayEventsList.value = response.data || response || []
+      } else {
+        console.log('❌ 获取今日事件失败，错误码:', response.code, '错误信息:', response.message)
+        // 使用空数组作为fallback
+        todayEventsList.value = []
+      }
+    } else {
+      // 非标准格式，直接使用响应数据
+      console.log('📄 今日事件非标准格式响应，直接使用数据')
+      todayEventsList.value = Array.isArray(response) ? response : []
+    }
+  } catch (error) {
+    console.error('获取今日事件失败:', error)
+    console.error('错误详情:', error.response?.data)
+    
+    // 如果API失败，使用空数组作为fallback
+    todayEventsList.value = []
+  }
+}
+
+// 获取通知公告列表
+const fetchNotices = async () => {
+  try {
+    console.log('📢 获取通知公告列表...')
+    console.log('请求URL: http://192.168.1.132:8082/api/home/notices')
+    
+    const response = await userApi.getNotices()
+    console.log('📝 通知公告响应:', response)
+    
+    // 检查响应格式
+    if (response && typeof response === 'object' && 'code' in response) {
+      console.log('🏷️ 通知公告标准格式响应，code:', response.code, 'message:', response.message)
+      
+      const successCodes = [200, 0, 201, 204]
+      if (successCodes.includes(response.code)) {
+        console.log('✅ 获取通知公告成功，响应码:', response.code)
+        notices.value = response.data || response || []
+      } else {
+        console.log('❌ 获取通知公告失败，错误码:', response.code, '错误信息:', response.message)
+        // 使用默认通知公告作为fallback
+        notices.value = [
+          {
+            id: 1,
+            title: '选课通知',
+            content: '2024春季学期选课即将开始，请同学们及时关注选课时间。',
+            time: '2024-01-15 10:00'
+          },
+          {
+            id: 2,
+            title: '项目实训报名',
+            content: '企业项目实训报名通道已开启，有意向的同学请尽快报名。',
+            time: '2024-01-14 14:30'
+          },
+          {
+            id: 3,
+            title: '学习进度提醒',
+            content: '部分课程学习进度较低，请合理安排学习时间。',
+            time: '2024-01-13 09:00'
+          }
+        ]
+      }
+    } else {
+      // 非标准格式，直接使用响应数据
+      console.log('📄 通知公告非标准格式响应，直接使用数据')
+      notices.value = Array.isArray(response) ? response : []
+    }
+  } catch (error) {
+    console.error('获取通知公告失败:', error)
+    console.error('错误详情:', error.response?.data)
+    
+    // 如果API失败，使用默认通知公告作为fallback
+    notices.value = [
+      {
+        id: 1,
+        title: '选课通知',
+        content: '2024春季学期选课即将开始，请同学们及时关注选课时间。',
+        time: '2024-01-15 10:00'
+      },
+      {
+        id: 2,
+        title: '项目实训报名',
+        content: '企业项目实训报名通道已开启，有意向的同学请尽快报名。',
+        time: '2024-01-14 14:30'
+      },
+      {
+        id: 3,
+        title: '学习进度提醒',
+        content: '部分课程学习进度较低，请合理安排学习时间。',
+        time: '2024-01-13 09:00'
+      }
+    ]
+  }
+}
+
 // 判断是否有完成的课程
 const hasCompletedCourse = computed(() => {
   return recentCourses.value.some(course => course.status === '已完成')
@@ -537,26 +868,7 @@ const quickActions = ref([
 
 
 
-const notices = ref([
-  {
-    id: 1,
-    title: '选课通知',
-    content: '2024春季学期选课即将开始，请同学们及时关注选课时间。',
-    time: '2024-01-15 10:00'
-  },
-  {
-    id: 2,
-    title: '项目实训报名',
-    content: '企业项目实训报名通道已开启，有意向的同学请尽快报名。',
-    time: '2024-01-14 14:30'
-  },
-  {
-    id: 3,
-    title: '学习进度提醒',
-    content: '部分课程学习进度较低，请合理安排学习时间。',
-    time: '2024-01-13 09:00'
-  }
-])
+const notices = ref([])
 
 const todoList = ref([])
 const todoIdCounter = ref(1)
@@ -567,31 +879,22 @@ const newTodoDescription = ref('')
 const newTodoDeadline = ref('')
 const newTodoPriority = ref(1)
 
-const calendarEvents = ref([
-  { date: '2024-01-20', title: 'Vue.js作业截止', type: 'warning' },
-  { date: '2024-01-22', title: '数据结构复习', type: 'info' },
-  { date: '2024-01-25', title: 'Python数据分析考试', type: 'danger' }
-])
+const calendarEvents = ref([])
+const todayEventsList = ref([])
 
-const studyHoursData = {
+const studyHoursData = ref({
   week: {
-    days: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
-    hours: [2.5, 3.0, 2.0, 3.5, 2.5, 1.5, 1.0]
+    days: [],
+    hours: []
   },
   month: {
-    days: ['第1周', '第2周', '第3周', '第4周'],
-    hours: [15, 18, 16, 14]
+    days: [],
+    hours: []
   }
-}
+})
 
 // 学生技能数据
-const skillsData = ref([
-  { name: 'Vue.js前端开发', value: 35 },
-  { name: 'React高级开发', value: 25 },
-  { name: 'Python数据分析', value: 20 },
-  { name: '数据库系统', value: 12 },
-  { name: 'Node.js后端', value: 8 }
-])
+const skillsData = ref([])
 
 // 技能图表配置
 const skillsChartOption = computed(() => {
@@ -726,7 +1029,7 @@ const getProgressColor = (percentage) => {
 
 // 学习统计图表配置
 const studyChartOption = computed(() => {
-  const data = chartTimeRange.value === 'week' ? studyHoursData.week : studyHoursData.month
+  const data = chartTimeRange.value === 'week' ? studyHoursData.value.week : studyHoursData.value.month
   return {
     tooltip: {
       trigger: 'axis',
@@ -799,10 +1102,7 @@ const hasEvent = (date) => {
   return calendarEvents.value.some(event => event.date === date)
 }
 
-const todayEvents = computed(() => {
-  const today = new Date().toISOString().split('T')[0]
-  return calendarEvents.value.filter(event => event.date === today)
-})
+
 
 // 待办事项相关方法
 const addTodo = async () => {

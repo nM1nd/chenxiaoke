@@ -174,7 +174,7 @@ const handleResetPassword = async () => {
         }
         
         console.log('重置密码数据:', resetData)
-        console.log('请求URL:', 'http://192.168.1.132:8082/api/auth/reset-password')
+        console.log('请求URL:', 'http://192.168.1.157:8082/api/auth/reset-password')
         
         // 发送重置密码请求
         const response = await userApi.resetPassword(resetData)

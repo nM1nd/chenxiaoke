@@ -334,16 +334,55 @@ const handleLogin = async () => {
           throw new Error('登录响应无效，请重试')
         }
         
-        // 保存token
+        // 保存token和refreshToken
         if (data.token) {
           localStorage.setItem('token', data.token)
           console.log('Token已保存:', data.token)
         }
         
+        // 如果响应中有refreshToken，也保存它
+        if (data.refreshToken) {
+          localStorage.setItem('refreshToken', data.refreshToken)
+          console.log('RefreshToken已保存:', data.refreshToken)
+        }
+        
+        // 从auth/me端点获取完整的用户信息
+        let userInfo = null
+        try {
+          console.log('🔍 从auth/me获取用户信息...')
+          const authUserInfo = await userApi.getAuthUserInfo()
+          console.log('✅ 获取到用户信息:', authUserInfo)
+          
+          // 处理不同格式的响应
+          if (authUserInfo && authUserInfo.data) {
+            userInfo = authUserInfo.data
+          } else if (authUserInfo && authUserInfo.user) {
+            userInfo = authUserInfo.user
+          } else {
+            userInfo = authUserInfo
+          }
+          
+          console.log('👤 处理后的用户信息:', userInfo)
+        } catch (error) {
+          console.error('❌ 获取用户信息失败:', error)
+          console.log('🔄 使用fallback用户信息')
+          
+          // 如果获取用户信息失败，使用登录响应中的用户信息
+          if (data.user) {
+            userInfo = data.user
+          } else {
+            // 最后的fallback，创建基本的用户信息
+            userInfo = {
+              name: loginForm.username,
+              username: loginForm.username
+            }
+          }
+        }
+        
         // 保存用户信息
-        if (data.user) {
-          localStorage.setItem('userInfo', JSON.stringify(data.user))
-          console.log('用户信息已保存:', data.user)
+        if (userInfo) {
+          localStorage.setItem('userInfo', JSON.stringify(userInfo))
+          console.log('用户信息已保存:', userInfo)
         } else {
           // 如果API没有返回用户信息，尝试使用注册时保存的临时信息
           const tempUserInfo = localStorage.getItem('tempUserInfo')
@@ -366,6 +405,9 @@ const handleLogin = async () => {
         localStorage.setItem('isAuthenticated', 'true')
         localStorage.setItem('username', loginForm.username)
         console.log('登录状态已设置')
+        
+        // 确保token设置后立即验证可以调用推荐课程API
+        console.log('✅ 登录成功，token已保存，可以调用需要认证的API')
         
         ElMessage.success('登录成功')
         // 跳转到首页
@@ -423,7 +465,7 @@ const handleRegister = async () => {
         
         // 打印调试信息
         console.log('注册数据:', registerData)
-        console.log('请求URL:', 'http://192.168.1.132:8082/api/auth/register')
+        console.log('请求URL:', 'http://192.168.1.157:8082/api/auth/register')
         
         // 发送完整注册信息到指定API
         const response = await userApi.register(registerData)
@@ -539,7 +581,7 @@ const handleForgotPassword = async () => {
     if (!email) return
 
     console.log('准备发送忘记密码请求:', { email })
-    console.log('请求URL:', 'http://192.168.1.132:8082/api/auth/forgot-password')
+    console.log('请求URL:', 'http://192.168.1.157:8082/api/auth/forgot-password')
 
     // 发送忘记密码请求
     const response = await userApi.forgotPassword({ email })
